@@ -30,10 +30,11 @@ SomePod - Some Pod to parse
 * A bullet
 * Point
 ** With extra levels
+   and continuation data
 ** Going
 *** Up
 ** and
-* Down
+* Down with B<bold text> here.
 ** And up again
 
 END

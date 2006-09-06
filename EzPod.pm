@@ -92,7 +92,7 @@ package XML::Filter::EzPod;
 
 use strict;
 
-our $VERSION = '1.0';
+our $VERSION = '1.1';
 
 use XML::SAX::Base;
 
@@ -102,6 +102,10 @@ sub new {
     my $class = shift;
     my $self  = $class->SUPER::new(@_);
     $self->{in_paragraph} = 0;
+    $self->{ol_level} = 0;
+    $self->{ul_level} = 0;
+    $self->{indent} = 4;
+    $self->{listopen} = 0;
     return $self;
 }
 
@@ -124,8 +128,31 @@ sub end_element {
     if ($self->{in_paragraph}) {
         $self->{in_paragraph}--;
     }
+    if ($self->{in_paragraph} == 0) {
+        # close all lists
+        $self->close_list;
+        for (1 .. $self->{ol_level}) {
+            #print "</ol>\n";
+            $self->SUPER::end_element(_element('orderedlist'));
+            $self->{ol_level} = 0;
+        }
+        for (1 .. $self->{ul_level}) {
+            #print "</ul>\n";
+            $self->SUPER::end_element(_element('itemizedlist'));
+            $self->{ul_level} = 0;
+        }
+        $self->{indent} = 4;
+    }
     
     $self->SUPER::end_element($el);
+}
+
+sub close_list {
+    my $self = shift;
+    if ($self->{listopen}) {
+        $self->SUPER::end_element(_element('listitem', 1));
+        $self->{listopen} = 0;
+    }
 }
 
 sub characters {
@@ -136,38 +163,36 @@ sub characters {
         if ($data->{Data} =~ /^[\*\#]/m) {
             # likely candidate for turning into bullet points
             my @lines = split(/\n/, $data->{Data});
-            my $ol_level = 0;
-            my $ul_level = 0;
-            my $indent = 4;
-            foreach my $line (@lines) {
+            for my $line (@lines) {
                 if ($line =~ /^>(>?)$/) {
                     if ($1) {
-                        $indent = "-2";
+                        $self->{indent} = "-2";
                     }
                     else {
-                        $indent = "-1";
+                        $self->{indent} = "-1";
                     }
                     next;
                 }
                 elsif ($line =~ /^>(\d+)$/) {
-                    $indent = $1;
+                    $self->{indent} = $1;
                     next;
                 }
                 if ($line =~ s/^(\*+)\s//) {
+                    $self->close_list;
                     my $depth = length($1);
-                    if ($ol_level) {
-                        for (1 .. $ol_level) {
+                    if ($self->{ol_level}) {
+                        for (1 .. $self->{ol_level}) {
                             #print "</ol>\n";
                             $self->SUPER::end_element(_element('orderedlist'));
                         }
-                        $ol_level = 0;
+                        $self->{ol_level} = 0;
                     }
-                    my $diff = $depth - $ul_level;
+                    my $diff = $depth - $self->{ul_level};
                     while ($diff) {
                         if ($diff > 0) {
                             #print "<ul>\n";
                             $self->SUPER::start_element(
-                                _add_attrib(_element('itemizedlist'), indent_width => $indent)
+                                _add_attrib(_element('itemizedlist'), indent_width => $self->{indent})
                             );
                             $diff--;
                         }
@@ -177,26 +202,27 @@ sub characters {
                             $diff++;
                         }
                     }
-                    $ul_level = $depth;
+                    $self->{ul_level} = $depth;
                     #print "$line\n";
                     $self->SUPER::start_element(_element('listitem'));
                     $self->SUPER::characters({ Data => $line });
-                    $self->SUPER::end_element(_element('listitem', 1));
+                    $self->{listopen} = 1;
                 }
                 elsif ($line =~ s/^(\#+)\s//) {
+                    $self->close_list;
                     my $depth = length($1);
-                    if ($ul_level) {
-                        for (1 .. $ul_level) {
+                    if ($self->{ul_level}) {
+                        for (1 .. $self->{ul_level}) {
                             $self->SUPER::end_element(_element('itemizedlist'));
                         }
-                        $ul_level = 0;
+                        $self->{ul_level} = 0;
                     }
-                    my $diff = $depth - $ol_level;
+                    my $diff = $depth - $self->{ol_level};
                     while ($diff) {
                         if ($diff > 0) {
                             #print "<ol>\n";
                             $self->SUPER::start_element(
-                                _add_attrib(_element('orderedlist'), indent_width => $indent)
+                                _add_attrib(_element('orderedlist'), indent_width => $self->{indent})
                             );
                             $diff--;
                         }
@@ -206,23 +232,15 @@ sub characters {
                             $diff++;
                         }
                     }
-                    $ol_level = $depth;
+                    $self->{ol_level} = $depth;
                     #print "$line\n";
                     $self->SUPER::start_element(_element('listitem'));
                     $self->SUPER::characters({ Data => $line });
-                    $self->SUPER::end_element(_element('listitem', 1));
+                    $self->{listopen} = 1;
                 }
                 else {
                     $self->SUPER::characters({ Data => $line });
                 }
-            }
-            for (1 .. $ol_level) {
-                #print "</ol>\n";
-                $self->SUPER::end_element(_element('orderedlist'));
-            }
-            for (1 .. $ul_level) {
-                #print "</ul>\n";
-                $self->SUPER::end_element(_element('itemizedlist'));
             }
             return;
         }
