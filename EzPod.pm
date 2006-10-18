@@ -92,7 +92,7 @@ package XML::Filter::EzPod;
 
 use strict;
 
-our $VERSION = '1.1';
+our $VERSION = '1.2';
 
 use XML::SAX::Base;
 
@@ -102,6 +102,7 @@ sub new {
     my $class = shift;
     my $self  = $class->SUPER::new(@_);
     $self->{in_paragraph} = 0;
+    $self->{cur_element} = '';
     $self->{ol_level} = 0;
     $self->{ul_level} = 0;
     $self->{indent} = 4;
@@ -112,10 +113,12 @@ sub new {
 sub start_element {
     my ($self, $el) = @_;
     
+    $self->{cur_element} = $el->{LocalName};
     if ($el->{LocalName} eq 'para') {
         $self->{in_paragraph}++;
     }
     elsif ($self->{in_paragraph}) {
+        # paragraph sub-element (e.g. I<...>)
         $self->{in_paragraph}++;
     }
     
@@ -158,7 +161,7 @@ sub close_list {
 sub characters {
     my ($self, $data) = @_;
     
-    if ($self->{in_paragraph}) {
+    if ($self->{cur_element} eq 'para') {
         #print "Chars: $data->{Data}\n";
         if ($data->{Data} =~ /^[\*\#]/m) {
             # likely candidate for turning into bullet points
